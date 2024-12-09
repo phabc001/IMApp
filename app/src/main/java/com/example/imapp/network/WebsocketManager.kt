@@ -6,7 +6,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.*
 
@@ -28,7 +27,7 @@ object WebSocketManager {
 
     private val coroutineScope = CoroutineScope(Dispatchers.IO) // 使用 IO 线程的协程作用域
 
-    var onMessageReceived: ((String) -> Unit)? = null // 新增全局消息回调
+    var onMessageReceived: ((Message) -> Unit)? = null // 新增全局消息回调
 
     /**
      * 建立 WebSocket 连接
@@ -48,21 +47,17 @@ object WebSocketManager {
 
     /**
      * 发送消息
-     * @param message 要发送的消息内容
+     * @param message 要发送的消息对象
      */
-    fun sendMessage(message: String) {
+    fun sendMessage(message: Message) {
         if (!isConnected) {
             Log.e("WebSocketManager", "WebSocket 未连接，无法发送消息")
             return
         }
 
-        val formattedMessage = JSONObject().apply {
-            put("sender", "AndroidApp")
-            put("message", message)
-        }.toString()
-
-        Log.i("WebSocketManager", "Sending message: $formattedMessage")
-        webSocket?.send(formattedMessage)
+        val jsonMessage = Message.toJson(message)
+        webSocket?.send(jsonMessage)
+        Log.i("WebSocketManager", "Sent message: $jsonMessage")
     }
 
     /**
@@ -120,7 +115,7 @@ object WebSocketManager {
         }
     }
 
-    fun setOnMessageReceivedCallback(callback: (String) -> Unit) {
+    fun setOnMessageReceivedCallback(callback: (Message) -> Unit) {
         onMessageReceived = callback
     }
 }
