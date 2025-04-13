@@ -15,8 +15,7 @@ object WebSocketManager {
     private var isConnected = false // 标记连接状态
     private var isConnecting = false // 标记是否正在连接
     private var retryCount = 0 // 当前重连次数
-    private val maxRetryCount = 5 // 最大重连次数
-    private val retryDelay = 3000L // 重连间隔（毫秒）
+    private val retryDelay = 1000L // 重连间隔（毫秒）
 
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -81,7 +80,7 @@ object WebSocketManager {
     fun onConnected() {
         isConnected = true
         isConnecting = false
-        retryCount = 0 // 重置重连计数
+//        retryCount = 0 // 重置重连计数
         Log.i("WebSocketManager", "WebSocket 已连接")
     }
 
@@ -90,13 +89,9 @@ object WebSocketManager {
      */
     fun onDisconnected() {
         isConnected = false
-        if (retryCount < maxRetryCount) {
-            retryCount++
-            Log.w("WebSocketManager", "尝试重新连接 WebSocket，第 $retryCount 次...")
-            scheduleReconnect()
-        } else {
-            Log.e("WebSocketManager", "达到最大重连次数，放弃连接")
-        }
+        retryCount++
+        Log.w("WebSocketManager", "尝试重新连接 WebSocket，第 $retryCount 次...")
+        scheduleReconnect()
     }
 
     /**
