@@ -111,13 +111,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
     private fun stopRecording() {
-        mediaRecorder?.apply {
-            stop()
-            release()
+        try {
+            // 测试发现录音时间太短会抛异常
+            mediaRecorder?.let {
+                it.stop()    // 这里可能抛出 IllegalStateException
+                it.release() // 释放资源
+            }
+        } catch (e: IllegalStateException) {
+            Log.e("MainActivity", "录音停止时发生IllegalStateException: ${e.message}", e)
+        } catch (e: RuntimeException) {
+            Log.e("MainActivity", "录音停止时发生RuntimeException: ${e.message}", e)
+        } finally {
+            mediaRecorder = null
         }
-        mediaRecorder = null
     }
+
 
     private fun calculateAudioDuration(filePath: String): Int {
         val retriever = MediaMetadataRetriever()

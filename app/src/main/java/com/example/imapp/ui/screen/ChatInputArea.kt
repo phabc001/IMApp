@@ -1,7 +1,7 @@
 package com.example.imapp.ui.screen
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Keyboard
@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -43,15 +44,20 @@ fun ChatInputArea(
         }
         Spacer(modifier = Modifier.width(4.dp))
         if (isVoiceMode) {
-            // 语音模式：显示按住说话区域
+            // 语音模式：显示按住说话区域，并利用 pointerInput 实现长按触发录音开始，释放触发录音结束
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .height(48.dp)
                     .background(Color(0xFFF0F0F0), shape = MaterialTheme.shapes.small)
-                    .clickable {
-                        // 此处可扩展为长按录音逻辑
-                        onStartRecord()
+                    .pointerInput(Unit){
+                        detectTapGestures(
+                            onPress = { offset ->
+                                onStartRecord()
+                                tryAwaitRelease()  // 等待手指释放后
+                                onStopRecord()
+                            }
+                        )
                     },
                 contentAlignment = Alignment.Center
             ) {
