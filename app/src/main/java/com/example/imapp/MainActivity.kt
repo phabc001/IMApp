@@ -75,8 +75,8 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     },
-                    onRecordStart = { startRecording() },
-                    onRecordStop = { stopRecording() },
+                    onStartRecord = { startRecording() },
+                    onStopRecord = { stopRecording() },
                     onSendVoice = {
                         if (audioFilePath.isNotEmpty()) {
                             val file = File(audioFilePath)

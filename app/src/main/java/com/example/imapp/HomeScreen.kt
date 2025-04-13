@@ -17,8 +17,8 @@ import com.example.imapp.ui.screen.MeScreen
 fun HomeScreen(
     messageFlow: MutableStateFlow<List<Message>>,
     onSendText: (String) -> Unit,
-    onRecordStart: () -> Unit,
-    onRecordStop: () -> Unit,
+    onStartRecord: () -> Unit,
+    onStopRecord: () -> Unit,
     onSendVoice: () -> Unit
 ) {
     // 当前选中的Tab
@@ -50,8 +50,8 @@ fun HomeScreen(
                     modifier = Modifier.padding(innerPadding),
                     messageFlow = messageFlow,
                     onSendText = onSendText,
-                    onRecordStart = onRecordStart,
-                    onRecordStop = onRecordStop,
+                    onStartRecord = onStartRecord,
+                    onStopRecord = onStopRecord,
                     onSendVoice = onSendVoice
                 )
             }
@@ -113,8 +113,8 @@ fun HomeScreenPreview() {
     HomeScreen(
         messageFlow = mockMessagesFlow as MutableStateFlow<List<Message>>,
         onSendText = { },
-        onRecordStart = { },
-        onRecordStop = { },
+        onStartRecord = { },
+        onStopRecord = { },
         onSendVoice = { }
     )
 }
