@@ -1,10 +1,14 @@
 package com.example.imapp.ui.screen
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Divider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -13,8 +17,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.imapp.audio.AudioPlayerUtil
 import com.example.imapp.network.Message
 import kotlinx.coroutines.flow.StateFlow
 
@@ -23,10 +29,15 @@ import kotlinx.coroutines.flow.StateFlow
  *
  * @param messageFlow 聊天消息流，包含 TextMessage、AudioMessage、SystemMessage 等
  * @param onSendText 发送文本消息回调
- * @param onStartRecord 开始录音回调（语音模式下触发）
- * @param onStopRecord 停止录音回调（可扩展，用于长按录音实现）
+ * @param onStartRecord 开始录音回调
+ * @param onStopRecord 停止录音回调
  * @param onSendVoice 发送语音消息回调
+ *
+ * 新增:
+ * @param onRequestAiReply 当用户长按插件消息后点“AI 回复”时触发，把消息文本传出去
+ * @param onRequestTts 当用户点击“朗读”按钮时触发，把AI文本传出去
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
     modifier: Modifier = Modifier,
@@ -34,7 +45,9 @@ fun ChatScreen(
     onSendText: (String) -> Unit,
     onStartRecord: () -> Unit,
     onStopRecord: () -> Unit,
-    onSendVoice: () -> Unit
+    onSendVoice: () -> Unit,
+    onRequestAiReply: (String) -> Unit,
+    onRequestTts: (String) -> Unit
 ) {
     val messages by messageFlow.collectAsState()
 
@@ -62,9 +75,8 @@ fun ChatScreen(
                         Spacer(modifier = Modifier.height(4.dp))
                         when (msg) {
                             is Message.TextMessage -> {
-                                // 根据发送者决定对齐方式和样式
                                 if (msg.sender == "AndroidApp") {
-                                    // 用户自己发送的消息：右对齐、蓝色背景
+                                    // --------------- 用户自己发送的消息 ---------------
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -84,11 +96,25 @@ fun ChatScreen(
                                         }
                                     }
                                 } else {
-                                    // 其他消息（如来自插件或AI）：左对齐、灰色背景
+                                    // --------------- 插件或AI 发送的消息 ---------------
+                                    // (1) 判断是否来自ChromePlugin
+                                    val isPlugin = msg.sender == "ChromePlugin"
+                                    // 用于长按菜单显隐
+                                    var showMenu by remember { mutableStateOf(false) }
+
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(4.dp),
+                                            .padding(4.dp)
+                                            .combinedClickable(
+                                                onClick = {},
+                                                onLongClick = {
+                                                    // (2) 仅当是插件消息时才弹出菜单
+                                                    if (isPlugin) {
+                                                        showMenu = true
+                                                    }
+                                                }
+                                            ),
                                         contentAlignment = Alignment.CenterStart
                                     ) {
                                         Surface(
@@ -101,12 +127,12 @@ fun ChatScreen(
                                                     text = "${msg.sender}: ${msg.text}",
                                                     color = Color.Black
                                                 )
-                                                // 针对AI消息，显示“TTS”按钮
+                                                // (3) 如果是AI消息，显示“朗读”按钮
                                                 if (msg.sender == "AI") {
                                                     Spacer(modifier = Modifier.height(4.dp))
                                                     Button(
                                                         onClick = {
-                                                            // TODO: 调用TTS逻辑：生成语音并加入音频队列
+                                                            onRequestTts(msg.text) // 调用外部 TTS 回调
                                                         },
                                                         modifier = Modifier.height(32.dp)
                                                     ) {
@@ -115,11 +141,28 @@ fun ChatScreen(
                                                 }
                                             }
                                         }
+
+                                        // (4) 长按菜单 - 只在 showMenu=true 时出现
+                                        if (showMenu) {
+                                            DropdownMenu(
+                                                expanded = showMenu,
+                                                onDismissRequest = { showMenu = false }
+                                            ) {
+                                                DropdownMenuItem(
+                                                    text = { Text("AI 回复") },
+                                                    onClick = {
+                                                        showMenu = false
+                                                        // 回调出去，让上层调用 AI 接口
+                                                        onRequestAiReply(msg.text)
+                                                    }
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
                             is Message.AudioMessage -> {
-                                // 音频消息显示（例如来自语音合成或录音）
+                                // --------------- 音频消息 ---------------
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -140,20 +183,23 @@ fun ChatScreen(
                                                 text = "Audio from ${msg.sender}, ${msg.duration}s",
                                                 color = Color.Black
                                             )
+                                            val context = LocalContext.current
+
                                             Button(
                                                 onClick = {
-                                                    // TODO: 实现播放语音逻辑（调用 AudioQueueManager 播放队列）
+                                                    AudioPlayerUtil.playBase64Audio(context, msg.data)
                                                 },
                                                 modifier = Modifier.height(32.dp)
                                             ) {
                                                 Text("播放")
                                             }
+
                                         }
                                     }
                                 }
                             }
                             is Message.SystemMessage -> {
-                                // 系统消息显示
+                                // --------------- 系统消息 ---------------
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -173,7 +219,7 @@ fun ChatScreen(
         }
         // 分隔线
         Divider(color = Color.LightGray)
-        // 底部输入区域（类似微信风格，带模式切换）
+        // 底部输入区域
         ChatInputArea(
             onSendText = onSendText,
             onStartRecord = onStartRecord,
@@ -187,23 +233,37 @@ fun ChatScreen(
 @Preview(showBackground = true, name = "ChatScreenPreview")
 @Composable
 fun ChatScreenPreview() {
-    // 构造模拟消息列表用于预览
     val mockMessages = listOf(
-        Message.TextMessage(id = "1", timestamp = System.currentTimeMillis(), sender = "AndroidApp", receiver = "all", text = "这是我发的消息"),
-        Message.TextMessage(id = "2", timestamp = System.currentTimeMillis(), sender = "ChromePlugin", receiver = "all", text = "你好，我是插件发的消息"),
-        Message.TextMessage(id = "3", timestamp = System.currentTimeMillis(), sender = "AI", receiver = "all", text = "这是AI的回复")
-    )
-    val previewFlow = remember { androidx.compose.runtime.mutableStateOf(mockMessages) }
-    // 为简化起见，使用 MutableStateFlow 实例包装预览数据
-    val messagesFlow = kotlinx.coroutines.flow.MutableStateFlow<List<Message>>(mockMessages)
-
-    MaterialTheme {
-        ChatScreen(
-            messageFlow = messagesFlow,
-            onSendText = {},
-            onStartRecord = {},
-            onStopRecord = {},
-            onSendVoice = {}
+        Message.TextMessage(
+            id = "1",
+            timestamp = System.currentTimeMillis(),
+            sender = "AndroidApp",
+            receiver = "all",
+            text = "这是我发的消息"
+        ),
+        Message.TextMessage(
+            id = "2",
+            timestamp = System.currentTimeMillis(),
+            sender = "ChromePlugin",
+            receiver = "all",
+            text = "你好，我是插件发的消息"
+        ),
+        Message.TextMessage(
+            id = "3",
+            timestamp = System.currentTimeMillis(),
+            sender = "AI",
+            receiver = "all",
+            text = "这是AI的回复"
         )
-    }
+    )
+    val messagesFlow = remember { mutableStateOf(mockMessages) }
+    ChatScreen(
+        messageFlow = kotlinx.coroutines.flow.MutableStateFlow(mockMessages),
+        onSendText = {},
+        onStartRecord = {},
+        onStopRecord = {},
+        onSendVoice = {},
+        onRequestAiReply = {},
+        onRequestTts = {}
+    )
 }

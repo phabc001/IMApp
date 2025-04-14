@@ -8,17 +8,24 @@ import android.util.Base64
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.example.imapp.audio.AudioQueueManager
 import com.example.imapp.network.ChatWebSocketListener
 import com.example.imapp.network.Message
 import com.example.imapp.network.WebSocketManager
 import com.example.imapp.ui.theme.IMAppTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 import java.io.File
 
 class MainActivity : ComponentActivity() {
@@ -91,6 +98,14 @@ class MainActivity : ComponentActivity() {
                             )
                             WebSocketManager.sendMessage(audioMsg)
                         }
+                    },
+                    onRequestAiReply = { pluginText ->
+                        // 调用刚才写的 fetchAiReply
+                        fetchAiReply(pluginText, messageFlow)
+                    },
+                    onRequestTts = { aiText ->
+                        // 调用 fetchTtsAudio
+                        fetchTtsAudio(aiText, messageFlow)
                     }
                 )
             }
@@ -135,5 +150,76 @@ class MainActivity : ComponentActivity() {
         val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
         retriever.release()
         return (durationStr?.toInt() ?: 0) / 1000
+    }
+
+    private fun fetchAiReply(pluginQuestion: String, messageFlow: MutableStateFlow<List<Message>>) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val jsonObj = JSONObject().apply {
+                    put("user_id", "peter")
+                    put("message", pluginQuestion)
+                }
+                val body = jsonObj.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+                val request = Request.Builder()
+                    .url("https://beforeai.net/api/ai/coze/non_stream")
+                    .post(body)
+                    .build()
+
+                val response = OkHttpClient().newCall(request).execute()
+                val rspStr = response.body?.string().orEmpty()
+                val rspJson = JSONObject(rspStr)
+                val replyObj = rspJson.optJSONObject("reply")
+                val replyContent = replyObj?.optString("content") ?: "AI回复解析失败"
+
+                // 回到主线程更新 UI
+                withContext(Dispatchers.Main) {
+                    val aiMsg = Message.TextMessage(sender = "AI", text = replyContent)
+                    messageFlow.update { current -> (current + aiMsg).takeLast(50) }
+                }
+            } catch (e: Exception) {
+                Log.e("fetchAiReply", "异常: ${e.message}")
+            }
+        }
+    }
+
+    private fun fetchTtsAudio(aiText: String, messageFlow: MutableStateFlow<List<Message>>) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val jsonObj = JSONObject().apply {
+                    put("text", aiText)
+                    put("voice_id", "longwan")  // 固定 voice_id
+                }
+                val body = jsonObj.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+                val request = Request.Builder()
+                    .url("https://beforeai.net/api/tts/")
+                    .post(body)
+                    .build()
+
+                val response = OkHttpClient().newCall(request).execute()
+                val rspStr = response.body?.string().orEmpty()
+                val rspJson = JSONObject(rspStr)
+
+                if (rspJson.optBoolean("success", false)) {
+                    val audioBase64 = rspJson.optString("audio_base64", "")
+
+                    // 可选：这里你可以加一段逻辑来计算音频长度（duration）
+                    val audioMessage = Message.AudioMessage(
+                        sender = "AI",
+                        data = audioBase64,
+                        duration = 0,  // 如可计算可更新
+                        format = "mp3"
+                    )
+
+                    // 回到主线程更新 UI
+                    withContext(Dispatchers.Main) {
+                        messageFlow.update { current -> (current + audioMessage).takeLast(50) }
+                    }
+                } else {
+                    Log.w("fetchTtsAudio", "TTS 请求失败：${rspJson.optString("message")}")
+                }
+            } catch (e: Exception) {
+                Log.e("fetchTtsAudio", "异常：${e.message}")
+            }
+        }
     }
 }

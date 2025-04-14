@@ -19,7 +19,9 @@ fun HomeScreen(
     onSendText: (String) -> Unit,
     onStartRecord: () -> Unit,
     onStopRecord: () -> Unit,
-    onSendVoice: () -> Unit
+    onSendVoice: () -> Unit,
+    onRequestAiReply: (String) -> Unit,
+    onRequestTts: (String) -> Unit
 ) {
     // 当前选中的Tab
     var selectedItem by remember { mutableStateOf(NavigationItem.Message) }
@@ -52,7 +54,9 @@ fun HomeScreen(
                     onSendText = onSendText,
                     onStartRecord = onStartRecord,
                     onStopRecord = onStopRecord,
-                    onSendVoice = onSendVoice
+                    onSendVoice = onSendVoice,
+                    onRequestAiReply = onRequestAiReply,
+                    onRequestTts = onRequestTts
                 )
             }
             NavigationItem.AudioManager -> {
@@ -115,6 +119,8 @@ fun HomeScreenPreview() {
         onSendText = { },
         onStartRecord = { },
         onStopRecord = { },
-        onSendVoice = { }
+        onSendVoice = { },
+        onRequestAiReply = {},
+        onRequestTts = {}
     )
 }
