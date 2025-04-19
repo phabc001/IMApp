@@ -32,8 +32,6 @@ import kotlinx.coroutines.flow.StateFlow
  * @param onStartRecord 开始录音回调
  * @param onStopRecord 停止录音回调
  * @param onSendVoice 发送语音消息回调
- *
- * 新增:
  * @param onRequestAiReply 当用户长按插件消息后点“AI 回复”时触发，把消息文本传出去
  * @param onRequestTts 当用户点击“朗读”按钮时触发，把AI文本传出去
  */
