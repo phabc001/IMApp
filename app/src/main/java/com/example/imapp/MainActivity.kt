@@ -15,6 +15,7 @@ import com.example.imapp.ui.theme.IMAppTheme
 import com.example.imapp.viewmodel.ChatViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.imapp.nav.RootNavGraph
 import com.example.imapp.service.ChatService
 
 
@@ -41,17 +42,7 @@ class MainActivity : ComponentActivity() {
         // 设置 Compose 内容
         setContent {
             IMAppTheme {
-                // 获取 ViewModel（需要在 Activity 范围内）
-                val viewModel: ChatViewModel = viewModel()
-                HomeScreen(
-                    messageFlow = viewModel.messageFlow as MutableStateFlow<List<Message>>,
-                    onSendText = { text -> viewModel.sendText(text) },
-                    onStartRecord = { viewModel.startRecording() },
-                    onStopRecord = { viewModel.stopRecording() },
-                    onSendVoice = { viewModel.sendVoice() },
-                    onRequestAiReply = { question -> viewModel.requestAiReply(question) },
-                    onRequestTts = { text -> viewModel.requestTts(text) }
-                )
+                RootNavGraph()
             }
         }
     }

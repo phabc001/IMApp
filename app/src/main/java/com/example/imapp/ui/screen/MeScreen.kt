@@ -3,6 +3,7 @@ package com.example.imapp.ui.screen
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -13,7 +14,7 @@ import androidx.compose.ui.unit.dp
 fun MeScreen(modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         Text("个人中心", modifier = Modifier.padding(vertical = 8.dp))
-        Divider()
+        HorizontalDivider()
 
         Text("设置", modifier = Modifier
             .fillMaxWidth()
@@ -22,8 +23,7 @@ fun MeScreen(modifier: Modifier = Modifier) {
             }
             .padding(vertical = 8.dp)
         )
-        Divider()
-
+        HorizontalDivider()
         Text("帮助与反馈", modifier = Modifier
             .fillMaxWidth()
             .clickable {
@@ -31,7 +31,7 @@ fun MeScreen(modifier: Modifier = Modifier) {
             }
             .padding(vertical = 8.dp)
         )
-        Divider()
+        HorizontalDivider()
 
         Text("关于", modifier = Modifier
             .fillMaxWidth()

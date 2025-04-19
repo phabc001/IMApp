@@ -57,6 +57,8 @@ dependencies {
 
     // Navigation
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.navigation.compose.v276)
+
 
     // Media3 ExoPlayer（播放相关）
     implementation(libs.androidx.media3.exoplayer)

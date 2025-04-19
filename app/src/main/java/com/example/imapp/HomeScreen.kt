@@ -1,6 +1,8 @@
 package com.example.imapp
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -12,18 +14,26 @@ import com.example.imapp.ui.screen.AudioManagerScreen
 import com.example.imapp.ui.screen.ChatScreen
 import com.example.imapp.ui.screen.MeScreen
 import com.example.imapp.ui.screen.VoiceCloneScreen
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import com.example.imapp.viewmodel.ChatViewModel
+import kotlinx.coroutines.flow.StateFlow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    messageFlow: MutableStateFlow<List<Message>>,
-    onSendText: (String) -> Unit,
-    onStartRecord: () -> Unit,
-    onStopRecord: () -> Unit,
-    onSendVoice: () -> Unit,
-    onRequestAiReply: (String) -> Unit,
-    onRequestTts: (String) -> Unit
+    navController: NavController
 ) {
+    val chatVm: ChatViewModel = viewModel()
+    /* ② 从 ViewModel 拿流 / 回调 */
+    val messageFlow = chatVm.messageFlow          // 也可以直接 collectAsState()
+    val onSendText: (String) -> Unit      = chatVm::sendText
+    val onStartRecord: () -> Unit         = chatVm::startRecording
+    val onStopRecord: () -> Unit          = chatVm::stopRecording
+    val onSendVoice: () -> Unit           = chatVm::sendVoice
+    val onRequestAiReply: (String) -> Unit = chatVm::requestAiReply
+    val onRequestTts: (String) -> Unit     = chatVm::requestTts
+
     // 当前选中的Tab
     var selectedItem by remember { mutableStateOf(NavigationItem.Message) }
 
@@ -37,6 +47,14 @@ fun HomeScreen(
                         NavigationItem.VoiceClone   -> "声音克隆"
                         NavigationItem.Me -> "我"
                     })
+                },
+                /* 把右上角按钮放 actions */
+                actions = {
+                    if (selectedItem == NavigationItem.VoiceClone) {
+                        IconButton(onClick = { navController.navigate("voice-management") }) {
+                            Icon(Icons.Default.ManageAccounts, contentDescription = "音色管理")
+                        }
+                    }
                 }
             )
         },
@@ -66,7 +84,8 @@ fun HomeScreen(
                     modifier = Modifier.padding(innerPadding)
                 )
             }
-            NavigationItem.VoiceClone   -> VoiceCloneScreen( Modifier.padding(innerPadding) )
+            NavigationItem.VoiceClone   -> VoiceCloneScreen(
+                Modifier.padding(innerPadding) )
             NavigationItem.Me -> {
                 MeScreen(modifier = Modifier.padding(innerPadding))
             }
@@ -108,28 +127,22 @@ fun BottomNavigationBar(
 }
 
 
-@Preview(showBackground = true, name = "HomeScreenPreview")
-@Composable
-fun HomeScreenPreview() {
-    // 1. 构造一个 mock 的消息 Flow
-    val mockMessagesFlow = remember {
-        MutableStateFlow(
-            listOf(
-                Message.TextMessage(sender = "AndroidApp", text = "Hello from app"),
-                Message.TextMessage(sender = "ChromePlugin", text = "Hi, I'm plugin"),
-                Message.TextMessage(sender = "AI", text = "AI auto reply sample..."),
-            )
-        )
-    }
-
-    // 2. 调用 HomeScreen，传入空实现的回调
-    HomeScreen(
-        messageFlow = mockMessagesFlow as MutableStateFlow<List<Message>>,
-        onSendText = { },
-        onStartRecord = { },
-        onStopRecord = { },
-        onSendVoice = { },
-        onRequestAiReply = {},
-        onRequestTts = {}
-    )
-}
+//@Preview(showBackground = true, name = "HomeScreenPreview")
+//@Composable
+//fun HomeScreenPreview() {
+//    // 1. 构造一个 mock 的消息 Flow
+//    val mockMessagesFlow = remember {
+//        MutableStateFlow(
+//            listOf(
+//                Message.TextMessage(sender = "AndroidApp", text = "Hello from app"),
+//                Message.TextMessage(sender = "ChromePlugin", text = "Hi, I'm plugin"),
+//                Message.TextMessage(sender = "AI", text = "AI auto reply sample..."),
+//            )
+//        )
+//    }
+//
+//    // 2. 调用 HomeScreen，传入空实现的回调
+//    HomeScreen(
+//      navController =
+//    )
+//}
