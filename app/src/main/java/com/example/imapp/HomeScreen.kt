@@ -11,6 +11,7 @@ import com.example.imapp.network.Message
 import com.example.imapp.ui.screen.AudioManagerScreen
 import com.example.imapp.ui.screen.ChatScreen
 import com.example.imapp.ui.screen.MeScreen
+import com.example.imapp.ui.screen.VoiceCloneScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,6 +34,7 @@ fun HomeScreen(
                     Text(text = when (selectedItem) {
                         NavigationItem.Message -> "群聊"
                         NavigationItem.AudioManager -> "音频管理"
+                        NavigationItem.VoiceClone   -> "声音克隆"
                         NavigationItem.Me -> "我"
                     })
                 }
@@ -64,6 +66,7 @@ fun HomeScreen(
                     modifier = Modifier.padding(innerPadding)
                 )
             }
+            NavigationItem.VoiceClone   -> VoiceCloneScreen( Modifier.padding(innerPadding) )
             NavigationItem.Me -> {
                 MeScreen(modifier = Modifier.padding(innerPadding))
             }
@@ -86,8 +89,14 @@ fun BottomNavigationBar(
         NavigationBarItem(
             selected = (selectedItem == NavigationItem.AudioManager),
             onClick = { onSelectItem(NavigationItem.AudioManager) },
-            label = { Text("音频管理") },
+            label = { Text("音频") },
             icon = {}
+        )
+        NavigationBarItem(
+            selected = selectedItem == NavigationItem.VoiceClone,
+            onClick  = { onSelectItem(NavigationItem.VoiceClone) },
+            label    = { Text("克隆") },
+            icon     = {}
         )
         NavigationBarItem(
             selected = (selectedItem == NavigationItem.Me),
