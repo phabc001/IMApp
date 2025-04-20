@@ -26,7 +26,7 @@ object TtsRepository {
                 val rsp = client.newCall(req).execute()
                 if (!rsp.isSuccessful) return@withContext null
                 val bytes = rsp.body?.bytes() ?: return@withContext null
-                val file = File(ctx.filesDir, "tts_${UUID.randomUUID()}.mp3")
+                val file = File(ctx.filesDir, "tts_${voiceId}_${UUID.randomUUID()}.mp3")
                 file.writeBytes(bytes)
                 AudioRepository.addAudio(file)       // 合成成功后加入音频库
                 file

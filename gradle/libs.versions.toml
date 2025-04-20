@@ -11,7 +11,9 @@ lifecycleRuntimeKtx = "2.8.7"
 activityCompose = "1.9.3"
 composeBom = "2023.10.01"
 material3 = "1.3.2"
+media3Exoplayer = "1.5.0"
 media3Ui = "1.6.1"
+media3UiVersion = "1.5.0"
 navigationCompose = "2.8.9"
 gson = "2.10"
 materialIconsExtended = "1.4.3"
@@ -28,7 +30,9 @@ androidx-foundation = { module = "androidx.compose.foundation:foundation", versi
 androidx-foundation-v154 = { module = "androidx.compose.foundation:foundation", version.ref = "foundationVersion" }
 androidx-material3 = { module = "androidx.compose.material3:material3", version.ref = "material3" }
 androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3Ui" }
+androidx-media3-exoplayer-v150 = { module = "androidx.media3:media3-exoplayer", version.ref = "media3Exoplayer" }
 androidx-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3Ui" }
+androidx-media3-ui-v150 = { module = "androidx.media3:media3-ui", version.ref = "media3UiVersion" }
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
 androidx-navigation-compose-v276 = { module = "androidx.navigation:navigation-compose", version.ref = "navigationComposeVersion" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }

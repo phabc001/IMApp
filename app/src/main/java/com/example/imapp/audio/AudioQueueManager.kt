@@ -48,7 +48,7 @@ object AudioQueueManager {
                             .build(),
                         true
                     )
-                    repeatMode = ExoPlayer.REPEAT_MODE_OFF
+                    repeatMode = REPEAT_MODE_OFF
                     addListener(object : Player.Listener {
                         override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                             item?.mediaId?.let { id ->

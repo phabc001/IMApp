@@ -71,6 +71,9 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.ui)
     implementation(libs.androidx.foundation.v154)
+    implementation(libs.androidx.media3.exoplayer.v150)
+    implementation(libs.androidx.media3.ui.v150)
+
 
 
 
