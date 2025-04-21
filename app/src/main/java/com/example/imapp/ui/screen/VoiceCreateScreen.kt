@@ -8,25 +8,34 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AudioFile
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavController
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.navigation.NavController
 import com.example.imapp.viewmodel.UploadState
 import com.example.imapp.viewmodel.VoiceCreateViewModel
+import kotlinx.coroutines.delay
 import java.io.File
-import java.util.*
+import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,178 +45,295 @@ fun VoiceCreateScreen(
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    val snackbarHost = remember { SnackbarHostState() }
 
-    /* ---------- 录音相关状态 ---------- */
+    // 录音状态
     var isRecording by remember { mutableStateOf(false) }
-    var recorder   by remember { mutableStateOf<MediaRecorder?>(null) }
+    var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var recordStart by remember { mutableStateOf(0L) }
+    var recordElapsed by remember { mutableStateOf(0L) }
+
+    // 播放器 & 文件状态
     var pickedFile by remember { mutableStateOf<File?>(null) }
+    val playerState = remember { mutableStateOf<ExoPlayer?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var durationMs by remember { mutableStateOf(0L) }
+    var positionMs by remember { mutableStateOf(0L) }
 
-    /* ---------- 预览播放器状态 ---------- */
-    val previewPlayerState = remember { mutableStateOf<ExoPlayer?>(null) }
+    // 上传状态
+    val uploadState by vm.state.collectAsState()
 
-    /* ---------- 预览函数 ---------- */
-    fun previewFile(file: File) {
-        // 释放老播放器
-        previewPlayerState.value?.release()
-        // 新播放器
+    // 加载音频但不播放，读取总时长 on STATE_READY
+    fun loadForPreview(file: File) {
+        playerState.value?.release()
         val player = ExoPlayer.Builder(ctx).build().apply {
+            addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_READY) {
+                        durationMs = duration.coerceAtLeast(0L)
+                    }
+                    if (state == Player.STATE_ENDED) {
+                        isPlaying = false
+                    }
+                }
+            })
             setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
             prepare()
-            play()
         }
-        previewPlayerState.value = player
+        playerState.value = player
+        positionMs = 0L
+        isPlaying = false
     }
 
-    /* ---------- 录音逻辑 ---------- */
+    // 录音开始
     fun startRecord() {
-        val file = File(ctx.cacheDir, "voice_${UUID.randomUUID()}.m4a")
+        val file = File(ctx.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
         recorder = MediaRecorder().apply {
             setAudioSource(MediaRecorder.AudioSource.MIC)
             setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             setOutputFile(file.absolutePath)
-            prepare()
-            start()
+            prepare(); start()
         }
+        recordStart = System.currentTimeMillis()
         pickedFile = file
         isRecording = true
-        // 停用上次的预览
-        previewPlayerState.value?.release()
-        previewPlayerState.value = null
+        playerState.value?.release()
+        playerState.value = null
     }
 
+    // 录音停止
     fun stopRecord() {
         try {
-            recorder?.apply {
-                try { stop() } catch (_: RuntimeException) { /* 删除坏文件 */ }
-                release()
-            }
-        } catch (_: Exception) { /* 忽略 */ }
+            recorder?.apply { stop(); release() }
+        } catch (_: Exception) {
+            pickedFile?.delete()
+            Toast.makeText(ctx, "录音失败，请重试", Toast.LENGTH_SHORT).show()
+            pickedFile = null
+        }
         recorder = null
         isRecording = false
-
-        // 录制完后自动预览
-        pickedFile?.let { file -> previewFile(file) }
+        val elapsed = System.currentTimeMillis() - recordStart
+        if (elapsed < 1000) {
+            Toast.makeText(ctx, "录音太短，请至少录制1秒", Toast.LENGTH_SHORT).show()
+            pickedFile = null
+        } else {
+            pickedFile?.let { loadForPreview(it) }
+        }
     }
 
 
 
-    /* ---------- 权限 & 文件选择 ---------- */
-    val permLauncher = rememberLauncherForActivityResult(RequestPermission()) { granted ->
-        if (granted) startRecord()
-        else Toast.makeText(ctx, "录音权限被拒绝", Toast.LENGTH_SHORT).show()
+    // 切换播放
+    fun togglePlay() {
+        playerState.value?.let { player ->
+            val next = !player.playWhenReady
+            player.playWhenReady = next
+            isPlaying = next
+        }
     }
-    val filePicker = rememberLauncherForActivityResult(OpenDocument()) { uri: Uri? ->
+
+    // 本地文件选择
+    val filePicker = rememberLauncherForActivityResult(OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
-        // 简单过滤 MIME
         val type = ctx.contentResolver.getType(uri) ?: ""
         if (!type.startsWith("audio/")) {
             Toast.makeText(ctx, "请选择音频文件", Toast.LENGTH_SHORT).show()
             return@rememberLauncherForActivityResult
         }
-        val file = copyUriToCache(ctx, uri) ?: return@rememberLauncherForActivityResult
-        pickedFile = file
-        previewFile(file)
+        copyUriToCache(ctx, uri)?.also {
+            pickedFile = it
+            loadForPreview(it)
+        }
     }
 
-    /* ---------- 上传状态 ---------- */
-    val uploadState by vm.state.collectAsState()
+    // 录音权限
+    val permLauncher = rememberLauncherForActivityResult(RequestPermission()) { granted ->
+        if (granted) startRecord()
+        else Toast.makeText(ctx, "录音权限被拒绝", Toast.LENGTH_SHORT).show()
+    }
 
-    /* ---------- UI ---------- */
-    Scaffold(topBar = { TopAppBar(title = { Text("创建音色") }) }) { pad ->
+    // 实时更新录音时长
+    LaunchedEffect(isRecording) {
+        recordElapsed = 0L
+        while (isRecording) {
+            recordElapsed = System.currentTimeMillis() - recordStart
+            delay(300)
+        }
+    }
+
+    // 实时更新播放进度
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            playerState.value?.let { positionMs = it.currentPosition }
+            delay(50)
+        }
+    }
+
+    // 上传结果监听
+    LaunchedEffect(uploadState) {
+        when (uploadState) {
+            is UploadState.Success -> {
+                snackbarHost.showSnackbar("创建成功：${(uploadState as UploadState.Success).voiceId}")
+                nav.popBackStack()
+            }
+            is UploadState.Error -> {
+                snackbarHost.showSnackbar("创建失败：${(uploadState as UploadState.Error).msg}")
+            }
+            else -> {}
+        }
+    }
+
+    // 计算并动画化滑块进度
+    val rawRatio = if (durationMs > 0) positionMs.toFloat() / durationMs else 0f
+    val sliderProgress by animateFloatAsState(
+        targetValue = rawRatio.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 300, easing = LinearEasing)
+    )
+
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("创建音色") }) },
+        snackbarHost = { SnackbarHost(snackbarHost) }
+    ) { pad ->
         Column(
             Modifier
                 .padding(pad)
-                .padding(24.dp),
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // 录音按钮
-            OutlinedButton(
-                onClick = {
-                    if (isRecording) stopRecord()
-                    else permLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Mic, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(if (isRecording) "停止录音" else "开始录音")
+            Text("录制或选择一段音频，用以生成新的音色", style = MaterialTheme.typography.bodyMedium)
+
+            // 按钮区域
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        if (isRecording) stopRecord()
+                        else permLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Mic, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (isRecording) "停止录音" else "开始录音")
+                }
+                OutlinedButton(
+                    onClick = { filePicker.launch(arrayOf("audio/*")) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.AudioFile, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("选择本地音频")
+                }
             }
 
-            // 文件选择按钮
-            OutlinedButton(
-                onClick = { filePicker.launch(arrayOf("audio/*")) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.AudioFile, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("从文件选择音频")
+            // 录音时长指示
+            if (isRecording) {
+                val mm = TimeUnit.MILLISECONDS.toMinutes(recordElapsed)
+                val ss = TimeUnit.MILLISECONDS.toSeconds(recordElapsed) % 60
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(12.dp).background(Color.Red, CircleShape))
+                    Spacer(Modifier.width(8.dp))
+                    Text(String.format(Locale.getDefault(), "%02d:%02d", mm, ss))
+                }
             }
 
-            // 预览提示
+            // 预览区
             if (pickedFile != null) {
-                AssistChip(
-                    onClick = { previewFile(pickedFile!!) },
-                    label = { Text("已选音频：${pickedFile!!.name}") },
-                    leadingIcon = { Icon(Icons.Default.Check, contentDescription = null) }
-                )
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("预览", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            IconButton(onClick = { togglePlay() }) {
+                                Icon(
+                                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    null
+                                )
+                            }
+                            Slider(
+                                value = sliderProgress,
+                                onValueChange = { frac ->
+                                    playerState.value?.seekTo((frac * durationMs).toLong())
+                                    positionMs = (frac * durationMs).toLong()
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                String.format(
+                                    Locale.getDefault(),
+                                    "%02d:%02d / %02d:%02d",
+                                    TimeUnit.MILLISECONDS.toMinutes(positionMs),
+                                    TimeUnit.MILLISECONDS.toSeconds(positionMs) % 60,
+                                    TimeUnit.MILLISECONDS.toMinutes(durationMs),
+                                    TimeUnit.MILLISECONDS.toSeconds(durationMs) % 60
+                                ),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
             }
 
-            // 上传并创建
+            // 上传按钮
             Button(
-                enabled = pickedFile != null && uploadState is UploadState.Idle,
                 onClick = {
                     pickedFile?.let {
-                        val name = it.nameWithoutExtension.take(12)
                         vm.reset()
-                        vm.uploadAndCreate(it, name)
+                        vm.uploadAndCreate(it, it.nameWithoutExtension.take(12))
                     }
                 },
+                enabled = pickedFile != null && uploadState is UploadState.Idle,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("上传并创建")
             }
+        }
 
-            // 状态展示
-            when (uploadState) {
-                UploadState.Uploading -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator()
-                        Spacer(Modifier.width(8.dp))
-                        Text("上传 / 创建中…")
+        // 上传遮罩
+        if (uploadState is UploadState.Uploading) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f))
+            ) {
+                Column(
+                    Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.height(12.dp))
+                    Text("上传 / 创建中…", color = Color.White)
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = { vm.reset() }) {
+                        Text("取消", color = Color.White)
                     }
                 }
-                is UploadState.Success -> {
-                    Text("创建成功：ID = ${(uploadState as UploadState.Success).voiceId}")
-                    LaunchedEffect(Unit) { nav.popBackStack() }
-                }
-                is UploadState.Error -> {
-                    Text("创建失败：${(uploadState as UploadState.Error).msg}")
-                }
-                else -> {}
             }
         }
     }
 
-    /* ---------- 退出释放播放器 ---------- */
     DisposableEffect(Unit) {
-        onDispose { previewPlayerState.value?.release() }
+        onDispose { playerState.value?.release() }
     }
 }
 
-/** 工具：将 SAF Uri 复制到应用缓存目录 */
+/** SAF Uri -> File */
 private fun copyUriToCache(ctx: android.content.Context, uri: Uri): File? = try {
-    val name = ctx.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-        val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-        cursor.moveToFirst()
-        cursor.getString(idx)
-    } ?: "audio_${UUID.randomUUID()}.tmp"
+    val name = ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+        ?.use { cursor ->
+            val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (idx >= 0 && cursor.moveToFirst()) cursor.getString(idx)
+            else "audio_${System.currentTimeMillis()}.tmp"
+        } ?: "audio_${System.currentTimeMillis()}.tmp"
     val dest = File(ctx.cacheDir, name)
     ctx.contentResolver.openInputStream(uri)?.use { input ->
         dest.outputStream().use { input.copyTo(it) }
     }
     dest
 } catch (e: Exception) {
-    e.printStackTrace()
-    null
+    e.printStackTrace(); null
 }
