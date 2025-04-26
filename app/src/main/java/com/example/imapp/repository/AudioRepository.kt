@@ -28,6 +28,15 @@ object AudioRepository {
         _audioList.value = _audioList.value + item
     }
 
+    fun addAudios(files: List<File>) {
+        val newItems = files.map { AudioItem(UUID.randomUUID().toString(), it.name, it.absolutePath) }
+        _audioList.value = _audioList.value + newItems
+    }
+
+    fun deleteAudio(id: String) {
+        _audioList.value = _audioList.value.filterNot { it.id == id }
+    }
+
     /** 拖动排序 */
     fun reorder(from: Int, to: Int) {
         val mutable = _audioList.value.toMutableList()
