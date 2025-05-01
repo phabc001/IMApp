@@ -1,6 +1,7 @@
 // ChatRepository.kt
 package com.example.imapp.repository
 
+import android.content.Context
 import com.example.imapp.network.Message
 import com.example.imapp.network.WebSocketManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,13 +14,20 @@ import android.util.Base64
 import android.util.Log
 import java.io.File
 import android.media.MediaMetadataRetriever
+import com.example.imapp.audio.AudioQueueManager
+import com.example.imapp.data.AudioItem
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import java.util.UUID
 
 object ChatRepository {
     // 保存最近的聊天消息列表（最多50条）
     private const val MAX_MESSAGES = 50
     private val _messageFlow = MutableStateFlow<List<Message>>(emptyList())
     val messageFlow = _messageFlow  // 供外部（ViewModel/UI）读取的流
+
+
 
     // 服务或WebSocket线程调用：收到新消息时更新消息流
     fun onReceiveMessage(message: Message) {
@@ -89,7 +97,7 @@ object ChatRepository {
     }
 
     // 请求 TTS 合成语音并作为音频消息插入
-    suspend fun requestTtsAudio(text: String) {
+    suspend fun requestTtsAudio(ctx: Context, text: String) {
         try {
             val json = JSONObject().apply {
                 put("text", text)
@@ -105,6 +113,31 @@ object ChatRepository {
             val rspJson = JSONObject(rspStr)
             if (rspJson.optBoolean("success", false)) {
                 val audioBase64 = rspJson.optString("audio_base64", "")
+                val audioData = Base64.decode(audioBase64, Base64.DEFAULT)
+                val dir = File(ctx.filesDir, "audios").apply { mkdirs() }
+                val filename = "tts_${System.currentTimeMillis()}.mp3"
+                val file = File(dir, filename)
+                file.outputStream().use { it.write(audioData) }
+
+                // 3. 构造 AudioItem
+                val ttsItem = AudioItem(
+                    id   = UUID.randomUUID().toString(),
+                    name = filename,
+                    uri  = file.absolutePath
+                )
+
+                // 在主线程初始化并操作播放器
+                withContext(Dispatchers.Main) {
+                        AudioQueueManager.init(ctx)
+                        val current = AudioQueueManager.playingItem.value
+                        if (AudioQueueManager.isPlaying && current != null) {
+                                AudioQueueManager.insertAfter(listOf(ttsItem))
+                            } else {
+                               AudioQueueManager.playQueue(listOf(ttsItem), loop = false)
+                            }
+                    }
+
+
                 val audioMsg = Message.AudioMessage(
                     sender = "AI",
                     data = audioBase64,

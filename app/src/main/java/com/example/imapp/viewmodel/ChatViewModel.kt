@@ -2,6 +2,7 @@
 package com.example.imapp.viewmodel
 
 import android.app.Application
+import android.content.Context
 import android.media.MediaRecorder
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -77,7 +78,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     // 6. 请求 AI 语音朗读
     fun requestTts(text: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            ChatRepository.requestTtsAudio(text)
+            ChatRepository.requestTtsAudio(getApplication(), text)
         }
     }
 

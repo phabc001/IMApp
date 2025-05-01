@@ -1,11 +1,13 @@
 package com.example.imapp
 
+import android.content.Context
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import kotlinx.coroutines.flow.MutableStateFlow
 import com.example.imapp.navigation.NavigationItem
@@ -25,6 +27,7 @@ fun HomeScreen(
     navController: NavController
 ) {
     val chatVm: ChatViewModel = viewModel()
+
     /* ② 从 ViewModel 拿流 / 回调 */
     val messageFlow = chatVm.messageFlow          // 也可以直接 collectAsState()
     val onSendText: (String) -> Unit      = chatVm::sendText
