@@ -2,7 +2,6 @@
 package com.example.imapp.viewmodel
 
 import android.app.Application
-import android.content.Context
 import android.media.MediaRecorder
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel

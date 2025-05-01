@@ -17,6 +17,9 @@ object AudioQueueManager {
     private var tempPlayer: ExoPlayer? = null          // 临时插播播放器
     private var loopFlag   = false
 
+    // 新增：记录所有临时插入的 TTS ID
+    private val tempIds = mutableSetOf<String>()
+
     private val _playingItem = MutableStateFlow<AudioItem?>(null)
     val playingItem = _playingItem.asStateFlow()
 
@@ -40,11 +43,22 @@ object AudioQueueManager {
                 true
             )
             addListener(object : Player.Listener {
+                private var previousMediaId: String? = null
                 override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-                    _playingItem.value = item?.mediaId?.let { id ->
-                        currentList.find { it.id == id }
+
+                    // 清理上一首临时 TTS
+                    previousMediaId?.takeIf { it in tempIds }?.also { id ->
+                        removeFromQueue(id)
+                        tempIds.remove(id)
                     }
+
+                    previousMediaId = item?.mediaId
+                    _playingItem.value = previousMediaId
+                        ?.let { id -> currentList.find { it.id == id } }
+
+
                 }
+
             })
         }
     }
@@ -125,13 +139,22 @@ object AudioQueueManager {
     fun insertAfter(items: List<AudioItem>) {
         mainPlayer?.let { player ->
             // 找到当前播放索引
-            val index = player.currentMediaItemIndex
+            val idx = player.currentMediaItemIndex
             // 构建 MediaItems
             val mediaItems = items.map { it.toMediaItem() }
             // 在 index+1 位置插入
-            player.addMediaItems(index + 1, mediaItems)
+            player.addMediaItems(idx + 1, mediaItems)
+
+            // 同步更新内部 currentList
+            val before = currentList.take(idx + 1)
+            val after  = currentList.drop(idx + 1)
+            currentList = before + items + after
+
+            // 标记为临时，播完后自动清理
+            items.forEach { tempIds.add(it.id) }
         }
     }
+
 
     fun removeFromQueue(id: String) {
         val player = mainPlayer ?: return

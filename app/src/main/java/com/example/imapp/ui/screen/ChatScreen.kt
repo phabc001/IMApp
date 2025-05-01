@@ -49,6 +49,28 @@ fun ChatScreen(
     onRequestTts: (String) -> Unit
 ) {
     val messages by messageFlow.collectAsState()
+    // 已经自动触发过 TTS 的 AI 消息 ID
+    val processedTtsIds = remember { mutableStateListOf<String>() }
+    // 已自动触发过 AI 回复的 Plugin 消息 ID
+    val processedPluginIds = remember { mutableStateListOf<String>() }
+
+    // ② 对新的 AI 文本消息自动调用 onRequestTts
+    LaunchedEffect(messages) {
+        messages.forEach { msg ->
+            if (msg is Message.TextMessage) {
+                // ① AI 消息 → 自动朗读
+                if (msg.sender == "AI" && msg.id !in processedTtsIds) {
+                    processedTtsIds += msg.id
+                    onRequestTts(msg.text)
+                }
+                // ② ChromePlugin 消息 → 自动触发 AI 回复
+                if (msg.sender == "ChromePlugin" && msg.id !in processedPluginIds) {
+                    processedPluginIds += msg.id
+                    onRequestAiReply(msg.text)
+                }
+            }
+        }
+    }
 
     Column(
         modifier = modifier

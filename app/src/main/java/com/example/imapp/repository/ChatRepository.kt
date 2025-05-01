@@ -27,8 +27,6 @@ object ChatRepository {
     private val _messageFlow = MutableStateFlow<List<Message>>(emptyList())
     val messageFlow = _messageFlow  // 供外部（ViewModel/UI）读取的流
 
-
-
     // 服务或WebSocket线程调用：收到新消息时更新消息流
     fun onReceiveMessage(message: Message) {
         _messageFlow.update { current ->
