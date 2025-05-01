@@ -11,7 +11,6 @@ import com.example.imapp.data.AudioItem
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 
 object AudioQueueManager {
     private var mainPlayer: ExoPlayer? = null          // 主队列播放器
@@ -119,4 +118,55 @@ object AudioQueueManager {
     /* 扩展：AudioItem -> MediaItem */
     private fun AudioItem.toMediaItem() =
         MediaItem.Builder().setUri(Uri.parse(uri)).setMediaId(id).setTag(name).build()
+
+    /**
+     * 将 items 插入到当前播放项之后
+     */
+    fun insertAfter(items: List<AudioItem>) {
+        mainPlayer?.let { player ->
+            // 找到当前播放索引
+            val index = player.currentMediaItemIndex
+            // 构建 MediaItems
+            val mediaItems = items.map { it.toMediaItem() }
+            // 在 index+1 位置插入
+            player.addMediaItems(index + 1, mediaItems)
+        }
+    }
+
+    fun removeFromQueue(id: String) {
+        val player = mainPlayer ?: return
+
+        // 1. 找到要删除的索引
+        val count = player.mediaItemCount
+        val idx = (0 until count).indexOfFirst { i ->
+            player.getMediaItemAt(i).mediaId == id
+        }
+        if (idx < 0) return
+
+        // 2. 判断是不是当前正在播放的那首
+        val isCurrent = idx == player.currentMediaItemIndex
+
+        // 3. 从 ExoPlayer 的队列中移除
+        player.removeMediaItem(idx)
+
+        // 4. 同步更新内部 currentList
+        currentList = currentList.filterNot { it.id == id }
+
+        // 5. 如果删的是“当前”那首，切到下一首或暂停
+        if (isCurrent) {
+            val newCount = player.mediaItemCount
+            if (newCount > idx) {
+                // 播放新索引处这首歌
+                player.seekTo(idx, /* positionMs = */ 0L)
+                player.playWhenReady = true
+            } else {
+                // 没有下一首，停播
+                player.pause()
+                _playingItem.value = null
+            }
+        }
+    }
+
+
+
 }

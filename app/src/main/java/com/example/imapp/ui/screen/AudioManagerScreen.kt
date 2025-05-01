@@ -8,8 +8,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CheckBox
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -33,10 +31,17 @@ fun AudioManagerScreen(
 ) {
     val ctx      = LocalContext.current
     val scope    = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
 
     /* ---- 支持多选的系统文件选择器 ---- */
     val multiLauncher = rememberLauncherForActivityResult(OpenMultipleDocuments()) { uris: List<Uri> ->
-        if (uris.isNotEmpty()) scope.launch { vm.importList(ctx, uris) }
+        if (uris.isNotEmpty()) scope.launch {
+
+            val (added, skipped) = vm.importList(ctx, uris)
+            snackbarHostState.showSnackbar("导入完成：成功 $added 首，跳过 $skipped 首"
+            )
+        }
     }
 
     /* ---- 状态收集 ---- */
@@ -46,7 +51,6 @@ fun AudioManagerScreen(
 
     Scaffold(
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text("音频管理") }) },
         floatingActionButton = {
             FloatingActionButton(onClick = { multiLauncher.launch(arrayOf("audio/*")) }) {
                 Icon(Icons.Default.Add, null)
