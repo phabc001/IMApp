@@ -129,7 +129,7 @@ object ChatRepository {
                         AudioQueueManager.init(ctx)
                         val current = AudioQueueManager.playingItem.value
                         if (AudioQueueManager.isPlaying && current != null) {
-                                AudioQueueManager.insertAfter(listOf(ttsItem))
+                                AudioQueueManager.insertTempAudioAfter(listOf(ttsItem))
                             } else {
                                AudioQueueManager.playQueue(listOf(ttsItem), loop = false)
                             }

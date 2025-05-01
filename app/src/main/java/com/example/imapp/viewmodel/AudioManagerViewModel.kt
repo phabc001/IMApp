@@ -106,7 +106,7 @@ class AudioManagerViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 if (currentId != null && newItems.isNotEmpty()) {
                     // 假设 AudioQueueManager 提供插入接口
-                    AudioQueueManager.insertAfter(newItems)
+                    AudioQueueManager.insertTempAudioAfter(newItems)
                 } else {
                     // 回退到整体刷新
                     AudioQueueManager.refreshQueue()

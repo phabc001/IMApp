@@ -11,6 +11,7 @@ import com.example.imapp.data.AudioItem
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.File
 
 object AudioQueueManager {
     private var mainPlayer: ExoPlayer? = null          // 主队列播放器
@@ -18,7 +19,8 @@ object AudioQueueManager {
     private var loopFlag   = false
 
     // 新增：记录所有临时插入的 TTS ID
-    private val tempIds = mutableSetOf<String>()
+    private val tempMap = mutableMapOf<String, String>()  // id → file path
+
 
     private val _playingItem = MutableStateFlow<AudioItem?>(null)
     val playingItem = _playingItem.asStateFlow()
@@ -28,8 +30,6 @@ object AudioQueueManager {
 
     /* 恢复主播放器的位置 */
     private var resumePosition: Long = 0L
-
-    private val scope = MainScope()
 
     fun init(ctx: Context) {
         if (mainPlayer != null) return
@@ -47,15 +47,15 @@ object AudioQueueManager {
                 override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
 
                     // 清理上一首临时 TTS
-                    previousMediaId?.takeIf { it in tempIds }?.also { id ->
-                        removeFromQueue(id)
-                        tempIds.remove(id)
+                    previousMediaId?.takeIf { it in tempMap }?.let { tempId ->
+                        val path = tempMap.remove(tempId)
+                        removeFromQueue(tempId)
+                        path?.let { File(it).takeIf(File::exists)?.delete() }
                     }
 
                     previousMediaId = item?.mediaId
                     _playingItem.value = previousMediaId
                         ?.let { id -> currentList.find { it.id == id } }
-
 
                 }
 
@@ -82,42 +82,6 @@ object AudioQueueManager {
         playQueue(currentList, loopFlag)
     }
 
-    /* ---------------- 临时插播 ---------------- */
-    fun playInterlude(ctx: Context, audio: AudioItem) {
-        val main = mainPlayer ?: return
-        resumePosition = main.currentPosition
-        main.pause()
-
-        val appCtx = ctx.applicationContext
-        if (tempPlayer == null) {
-            tempPlayer = ExoPlayer.Builder(appCtx).build().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(C.USAGE_MEDIA)
-                        .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
-                        .build(),
-                    true
-                )
-            }
-        }
-        tempPlayer?.apply {
-            clearMediaItems()
-            setMediaItem(audio.toMediaItem())
-            prepare()
-            playWhenReady = true
-            addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(state: Int) {
-                    if (state == Player.STATE_ENDED) {
-                        // 插播结束，释放 temp 并恢复主播放器
-                        clearMediaItems()
-                        playWhenReady = false
-                        main.seekTo(resumePosition)
-                        main.play()
-                    }
-                }
-            })
-        }
-    }
 
     /* ---------------- 控制 ---------------- */
     val isPlaying: Boolean get() = mainPlayer?.isPlaying == true
@@ -136,7 +100,7 @@ object AudioQueueManager {
     /**
      * 将 items 插入到当前播放项之后
      */
-    fun insertAfter(items: List<AudioItem>) {
+    fun insertTempAudioAfter(items: List<AudioItem>) {
         mainPlayer?.let { player ->
             // 找到当前播放索引
             val idx = player.currentMediaItemIndex
@@ -151,7 +115,8 @@ object AudioQueueManager {
             currentList = before + items + after
 
             // 标记为临时，播完后自动清理
-            items.forEach { tempIds.add(it.id) }
+            items.forEach { tempMap[it.id] = it.uri }
+
         }
     }
 
@@ -189,7 +154,4 @@ object AudioQueueManager {
             }
         }
     }
-
-
-
 }
