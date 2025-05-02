@@ -1,6 +1,5 @@
 package com.example.imapp.ui.screen
 
-import android.content.Context
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -19,58 +18,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.imapp.audio.AudioPlayerUtil
 import com.example.imapp.network.Message
-import kotlinx.coroutines.flow.StateFlow
+import com.example.imapp.viewmodel.ChatViewModel
 
-/**
- * ChatScreen 显示聊天消息和输入区域
- *
- * @param messageFlow 聊天消息流，包含 TextMessage、AudioMessage、SystemMessage 等
- * @param onSendText 发送文本消息回调
- * @param onStartRecord 开始录音回调
- * @param onStopRecord 停止录音回调
- * @param onSendVoice 发送语音消息回调
- * @param onRequestAiReply 当用户长按插件消息后点“AI 回复”时触发，把消息文本传出去
- * @param onRequestTts 当用户点击“朗读”按钮时触发，把AI文本传出去
- */
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
     modifier: Modifier = Modifier,
-    messageFlow: StateFlow<List<Message>>,
-    onSendText: (String) -> Unit,
-    onStartRecord: () -> Unit,
-    onStopRecord: () -> Unit,
-    onSendVoice: () -> Unit,
-    onRequestAiReply: (String) -> Unit,
-    onRequestTts: (String) -> Unit
-) {
-    val messages by messageFlow.collectAsState()
-    // 已经自动触发过 TTS 的 AI 消息 ID
-    val processedTtsIds = remember { mutableStateListOf<String>() }
-    // 已自动触发过 AI 回复的 Plugin 消息 ID
-    val processedPluginIds = remember { mutableStateListOf<String>() }
+    viewModel: ChatViewModel = viewModel()
 
-    // ② 对新的 AI 文本消息自动调用 onRequestTts
-    LaunchedEffect(messages) {
-        messages.forEach { msg ->
-            if (msg is Message.TextMessage) {
-                // ① AI 消息 → 自动朗读
-                if (msg.sender == "AI" && msg.id !in processedTtsIds) {
-                    processedTtsIds += msg.id
-                    onRequestTts(msg.text)
-                }
-                // ② ChromePlugin 消息 → 自动触发 AI 回复
-                if (msg.sender == "ChromePlugin" && msg.id !in processedPluginIds) {
-                    processedPluginIds += msg.id
-                    onRequestAiReply(msg.text)
-                }
-            }
-        }
-    }
+) {
+    // 只做展示：直接从 VM 拿流
+    val messages by viewModel.messageFlow.collectAsState()
 
     Column(
         modifier = modifier
@@ -153,7 +116,7 @@ fun ChatScreen(
                                                     Spacer(modifier = Modifier.height(4.dp))
                                                     Button(
                                                         onClick = {
-                                                            onRequestTts(msg.text) // 调用外部 TTS 回调
+                                                            viewModel.requestTts(msg.text) // 调用外部 TTS 回调
                                                         },
                                                         modifier = Modifier.height(32.dp)
                                                     ) {
@@ -174,7 +137,7 @@ fun ChatScreen(
                                                     onClick = {
                                                         showMenu = false
                                                         // 回调出去，让上层调用 AI 接口
-                                                        onRequestAiReply(msg.text)
+                                                        viewModel.requestAiReply(msg.text)
                                                     }
                                                 )
                                             }
@@ -242,49 +205,10 @@ fun ChatScreen(
         Divider(color = Color.LightGray)
         // 底部输入区域
         ChatInputArea(
-            onSendText = onSendText,
-            onStartRecord = onStartRecord,
-            onStopRecord = onStopRecord,
-            onSendVoice = onSendVoice
+            onSendText = viewModel::sendText,
+            onStartRecord = viewModel::startRecording,
+            onStopRecord = viewModel::stopRecording,
+            onSendVoice = viewModel::sendVoice
         )
     }
-}
-
-/** 预览函数：在 Android Studio 中预览 ChatScreen */
-@Preview(showBackground = true, name = "ChatScreenPreview")
-@Composable
-fun ChatScreenPreview() {
-    val mockMessages = listOf(
-        Message.TextMessage(
-            id = "1",
-            timestamp = System.currentTimeMillis(),
-            sender = "AndroidApp",
-            receiver = "all",
-            text = "这是我发的消息"
-        ),
-        Message.TextMessage(
-            id = "2",
-            timestamp = System.currentTimeMillis(),
-            sender = "ChromePlugin",
-            receiver = "all",
-            text = "你好，我是插件发的消息"
-        ),
-        Message.TextMessage(
-            id = "3",
-            timestamp = System.currentTimeMillis(),
-            sender = "AI",
-            receiver = "all",
-            text = "这是AI的回复"
-        )
-    )
-    val messagesFlow = remember { mutableStateOf(mockMessages) }
-    ChatScreen(
-        messageFlow = kotlinx.coroutines.flow.MutableStateFlow(mockMessages),
-        onSendText = {},
-        onStartRecord = {},
-        onStopRecord = {},
-        onSendVoice = {},
-        onRequestAiReply = {},
-        onRequestTts = {}
-    )
 }

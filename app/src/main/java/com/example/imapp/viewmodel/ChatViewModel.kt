@@ -10,12 +10,46 @@ import com.example.imapp.network.Message
 import com.example.imapp.repository.ChatRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
     // 从 Repository 获取消息流供 UI 层收集
     val messageFlow: StateFlow<List<Message>> = ChatRepository.messageFlow
+
+    // 去重集合，生命周期与 ViewModel 持平
+    private val processedPluginIds = mutableSetOf<String>()
+    private val processedTtsIds    = mutableSetOf<String>()
+
+    init {
+        // 增量监听“最新一条消息”，只触发一次
+        viewModelScope.launch(Dispatchers.IO) {
+            messageFlow.map { list -> list.lastOrNull() }
+                .filterNotNull()
+                .distinctUntilChanged { old, new ->
+                    old.id == new.id
+                }
+                .collect { msg ->
+                    if (msg is Message.TextMessage) {
+                        if (msg.sender == "ChromePlugin"
+                            && processedPluginIds.add(msg.id)
+                        ) {
+                            // 首次见到插件消息 → 调 AI 接口
+                            ChatRepository.requestAiReply(msg.text)
+                        }
+                        if (msg.sender == "AI"
+                            && processedTtsIds.add(msg.id)
+                        ) {
+                            // 首次见到 AI 回复 → 调 TTS 接口
+                            ChatRepository.requestTtsAudio(getApplication(), msg.text)
+                        }
+                    }
+                }
+        }
+    }
 
     // 1. 发送文本消息
     fun sendText(inputText: String) {

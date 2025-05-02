@@ -1,17 +1,13 @@
 package com.example.imapp
 
-import android.content.Context
+
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.tooling.preview.Preview
-import kotlinx.coroutines.flow.MutableStateFlow
 import com.example.imapp.navigation.NavigationItem
-import com.example.imapp.network.Message
 import com.example.imapp.ui.screen.AudioManagerScreen
 import com.example.imapp.ui.screen.ChatScreen
 import com.example.imapp.ui.screen.MeScreen
@@ -19,7 +15,7 @@ import com.example.imapp.ui.screen.VoiceCloneScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.example.imapp.viewmodel.ChatViewModel
-import kotlinx.coroutines.flow.StateFlow
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,15 +23,6 @@ fun HomeScreen(
     navController: NavController
 ) {
     val chatVm: ChatViewModel = viewModel()
-
-    /* ② 从 ViewModel 拿流 / 回调 */
-    val messageFlow = chatVm.messageFlow          // 也可以直接 collectAsState()
-    val onSendText: (String) -> Unit      = chatVm::sendText
-    val onStartRecord: () -> Unit         = chatVm::startRecording
-    val onStopRecord: () -> Unit          = chatVm::stopRecording
-    val onSendVoice: () -> Unit           = chatVm::sendVoice
-    val onRequestAiReply: (String) -> Unit = chatVm::requestAiReply
-    val onRequestTts: (String) -> Unit     = chatVm::requestTts
 
     // 当前选中的Tab
     var selectedItem by remember { mutableStateOf(NavigationItem.Message) }
@@ -73,13 +60,8 @@ fun HomeScreen(
             NavigationItem.Message -> {
                 ChatScreen(
                     modifier = Modifier.padding(innerPadding),
-                    messageFlow = messageFlow,
-                    onSendText = onSendText,
-                    onStartRecord = onStartRecord,
-                    onStopRecord = onStopRecord,
-                    onSendVoice = onSendVoice,
-                    onRequestAiReply = onRequestAiReply,
-                    onRequestTts = onRequestTts
+                    viewModel = chatVm
+
                 )
             }
             NavigationItem.AudioManager -> {
@@ -130,22 +112,3 @@ fun BottomNavigationBar(
 }
 
 
-//@Preview(showBackground = true, name = "HomeScreenPreview")
-//@Composable
-//fun HomeScreenPreview() {
-//    // 1. 构造一个 mock 的消息 Flow
-//    val mockMessagesFlow = remember {
-//        MutableStateFlow(
-//            listOf(
-//                Message.TextMessage(sender = "AndroidApp", text = "Hello from app"),
-//                Message.TextMessage(sender = "ChromePlugin", text = "Hi, I'm plugin"),
-//                Message.TextMessage(sender = "AI", text = "AI auto reply sample..."),
-//            )
-//        )
-//    }
-//
-//    // 2. 调用 HomeScreen，传入空实现的回调
-//    HomeScreen(
-//      navController =
-//    )
-//}
