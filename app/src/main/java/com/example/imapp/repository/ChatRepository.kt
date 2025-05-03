@@ -120,16 +120,19 @@ object ChatRepository {
             if (rspJson.optBoolean("success", false)) {
                 val audioBase64 = rspJson.optString("audio_base64", "")
                 val audioData = Base64.decode(audioBase64, Base64.DEFAULT)
-                val dir = File(ctx.filesDir, "audios").apply { mkdirs() }
+                val dir = File(ctx.filesDir, "tts_audios").apply { mkdirs() }
                 val filename = "tts_${System.currentTimeMillis()}.mp3"
-                val file = File(dir, filename)
-                file.outputStream().use { it.write(audioData) }
+                val audioFile = File(dir, filename)
+                audioFile.outputStream().use { it.write(audioData) }
+
+                val durationSec = calculateAudioDuration(audioFile)
+
 
                 // 3. 构造 AudioItem
                 val ttsItem = AudioItem(
                     id   = UUID.randomUUID().toString(),
                     name = filename,
-                    uri  = file.absolutePath
+                    uri  = audioFile.absolutePath
                     )
 
                 withContext(Dispatchers.Default) {
@@ -139,7 +142,7 @@ object ChatRepository {
                 val audioMsg = Message.AudioMessage(
                     sender = "AI",
                     data = audioBase64,
-                    duration = 0,       // 可进一步计算时长
+                    duration = durationSec,       // 可进一步计算时长
                     format = "mp3"
                 )
                 onReceiveMessage(audioMsg)

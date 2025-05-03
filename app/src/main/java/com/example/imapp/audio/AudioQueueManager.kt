@@ -8,6 +8,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.example.imapp.data.AudioItem
@@ -126,24 +127,33 @@ object AudioQueueManager {
         releaseTempPlayer()
     }
 
-    /**
-     * 插播 TTS 列表，互斥主播放
-     */
+    @OptIn(UnstableApi::class)
     fun playTts(context: Context, items: List<AudioItem>) {
         init(context)
-        if (items.isEmpty()) return
-
-
-
-        if (mainPlayer?.isPlaying == true) {
-            pendingTemp.clear()
-            pendingTemp.addAll(items)
-            wasMainPlayingBeforeTemp = true
+        if (items.isEmpty()) {
+            Log.w("AudioQueueManager", "TTS 插播请求为空，忽略播放。")
             return
         }
-        wasMainPlayingBeforeTemp = false
 
-        // 主播放器空闲
+        val isMainPlayerPlaying = mainPlayer?.isPlaying == true
+        val hasMediaItems = (mainPlayer?.mediaItemCount ?: 0) > 0
+        val isMainPlayerActive = isMainPlayerPlaying && hasMediaItems
+
+        Log.i("AudioQueueManager", "TTS 插播触发：isPlaying=$isMainPlayerPlaying, hasMediaItems=$hasMediaItems")
+
+        wasMainPlayingBeforeTemp = isMainPlayerPlaying
+
+        if (isMainPlayerActive) {
+            Log.i("AudioQueueManager", "主播放器正在播放，TTS 插播加入待播放队列，等待当前播放完成。")
+            pendingTemp.clear()
+            pendingTemp.addAll(items)
+            return
+        }
+
+        // 主播放器空闲，立即播放 TTS
+        Log.i("AudioQueueManager", "主播放器空闲，立即播放 TTS 插播。")
+        pendingTemp.clear()
+        pendingTemp.addAll(items)
         playTempList()
     }
 
@@ -214,8 +224,5 @@ object AudioQueueManager {
         mainPlayer?.repeatMode = if (loop) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
     }
 
-    fun hasMainMediaItems(): Boolean {
-        return (mainPlayer?.mediaItemCount ?: 0) > 0
-    }
 
 }
