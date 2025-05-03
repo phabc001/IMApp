@@ -7,11 +7,20 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import com.example.imapp.audio.AudioQueueManager
 import com.example.imapp.data.AudioItem
 import com.example.imapp.repository.AudioRepository
+import com.example.imapp.repository.ChatRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
+
+
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
@@ -20,9 +29,42 @@ private const val TAG = "AudioVM"
 
 class AudioManagerViewModel(app: Application) : AndroidViewModel(app) {
     val audioList: StateFlow<List<AudioItem>> = AudioRepository.audioList
-    val playingItem = AudioQueueManager.playingItem
 
-    init { AudioRepository.loadFromFolder(getApplication()) }
+    private val _loopMode = MutableStateFlow(false)
+    val loopMode: StateFlow<Boolean> = _loopMode.asStateFlow()
+
+    val playingItem: StateFlow<AudioItem?> =
+        AudioQueueManager.playingItem
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.Lazily,
+                initialValue = null as AudioItem?
+            )
+
+
+
+    val isPlaying: StateFlow<Boolean> =
+        AudioQueueManager.isMainPlaying
+            .stateIn(viewModelScope, SharingStarted.Lazily, false)
+
+    fun setLoopMode(value: Boolean) {
+        _loopMode.value = value
+        AudioQueueManager.setLoop(value)
+
+    }
+
+    init {
+        AudioQueueManager.init(app)
+
+        AudioRepository.loadFromFolder(getApplication())
+
+        viewModelScope.launch {
+            ChatRepository.ttsFlow.collect { ttsItem ->
+                AudioQueueManager.playTts(getApplication(), listOf(ttsItem))
+            }
+        }
+
+    }
 
     suspend fun importList(ctx: Context, uris: List<Uri>): Pair<Int, Int> =
         withContext(Dispatchers.IO) {
@@ -41,21 +83,7 @@ class AudioManagerViewModel(app: Application) : AndroidViewModel(app) {
 
         for (raw in uris) {
             // ---------- 1. 仅对 Tree Uri 做归一化 ----------
-            val uri = if (DocumentsContract.isTreeUri(raw)) {
-                try {
-                    ctx.contentResolver.takePersistableUriPermission(
-                        raw,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
-                    DocumentsContract.buildDocumentUriUsingTree(
-                        raw,
-                        DocumentsContract.getDocumentId(raw)
-                    )
-                } catch (e: Exception) {
-                    Log.w(TAG, "TreeUri build failed: ${e.message}")
-                    raw
-                }
-            } else raw
+            val uri = normalizeUri(ctx, raw)
 
             // ---------- 2. URI 去重 ----------
             if (!existedUris.add(uri.toString())) {
@@ -95,22 +123,6 @@ class AudioManagerViewModel(app: Application) : AndroidViewModel(app) {
         if (newFiles.isNotEmpty()){
             withContext(Dispatchers.Main) {
                 AudioRepository.addAudios(newFiles)
-
-                // 获取当前播放项 ID
-                val currentId = playingItem.value?.id
-
-                // 获取新增对应的 AudioItem 列表
-                val allItems = audioList.value
-                val newItems = newFiles.mapNotNull { file ->
-                    allItems.find { it.name == file.name }
-                }
-                if (currentId != null && newItems.isNotEmpty()) {
-                    // 假设 AudioQueueManager 提供插入接口
-                    AudioQueueManager.insertTempAudioAfter(newItems)
-                } else {
-                    // 回退到整体刷新
-                    AudioQueueManager.refreshQueue()
-                }
             }
 
         }
@@ -118,6 +130,14 @@ class AudioManagerViewModel(app: Application) : AndroidViewModel(app) {
         Log.i(TAG, "Import finished → added=$added, skipped=$skipped")
         return added to skipped
     }
+
+    private fun normalizeUri(ctx: Context, raw: Uri): Uri =
+        if (DocumentsContract.isTreeUri(raw)) try {
+            ctx.contentResolver.takePersistableUriPermission(raw, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            DocumentsContract.buildDocumentUriUsingTree(raw, DocumentsContract.getDocumentId(raw))
+        } catch (_: Exception) {
+            raw
+        } else raw
 
     /**
      * 根据 DISPLAY_NAME 和 mimeType 构造最终文件名。
@@ -139,16 +159,7 @@ class AudioManagerViewModel(app: Application) : AndroidViewModel(app) {
 
 
     fun delete(id: String) {
-        // 1. 先找到要删的 AudioItem
-        val current = audioList.value.firstOrNull { it.id == id }
-
-        // 2. 物理删掉私有目录里的文件
-        current?.let { File(it.uri).takeIf { f -> f.exists() }?.delete() }
-
-        // 3. 从播放队列移除
-        AudioQueueManager.removeFromQueue(id)
-
-        // 4. 更新内存列表
+        audioList.value.firstOrNull { it.id == id }?.uri?.let { File(it).delete() }
         AudioRepository.deleteAudio(id)
 
     }
@@ -156,11 +167,12 @@ class AudioManagerViewModel(app: Application) : AndroidViewModel(app) {
     fun reorder(from: Int, to: Int) = AudioRepository.reorder(from, to)
     fun toggleSelect(id: String) = AudioRepository.toggleSelect(id)
 
-    fun play(loop: Boolean) {
-        AudioQueueManager.init(getApplication())
-        AudioQueueManager.playQueue(audioList.value, loop)
+    fun play() {
+        AudioQueueManager.playQueue(audioList.value, loopMode.value)
     }
 
     fun pause() = AudioQueueManager.pause()
     fun resume() = AudioQueueManager.resume()
+
+
 }

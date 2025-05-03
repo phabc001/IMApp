@@ -16,7 +16,11 @@ import java.io.File
 import android.media.MediaMetadataRetriever
 import com.example.imapp.audio.AudioQueueManager
 import com.example.imapp.data.AudioItem
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import java.util.UUID
@@ -27,12 +31,16 @@ object ChatRepository {
     private val _messageFlow = MutableStateFlow<List<Message>>(emptyList())
     val messageFlow = _messageFlow  // 供外部（ViewModel/UI）读取的流
 
+    private val _ttsFlow = MutableSharedFlow<AudioItem>(replay = 0)
+    val ttsFlow = _ttsFlow.asSharedFlow()
+
     // 服务或WebSocket线程调用：收到新消息时更新消息流
     fun onReceiveMessage(message: Message) {
         _messageFlow.update { current ->
             (current + message).takeLast(MAX_MESSAGES)
         }
     }
+
 
     // 发送文本消息，通过 WebSocketManager
     fun sendTextMessage(text: String) {
@@ -122,19 +130,11 @@ object ChatRepository {
                     id   = UUID.randomUUID().toString(),
                     name = filename,
                     uri  = file.absolutePath
-                )
+                    )
 
-                // 在主线程初始化并操作播放器
-                withContext(Dispatchers.Main) {
-                        AudioQueueManager.init(ctx)
-                        val current = AudioQueueManager.playingItem.value
-                        if (AudioQueueManager.isPlaying && current != null) {
-                                AudioQueueManager.insertTempAudioAfter(listOf(ttsItem))
-                            } else {
-                               AudioQueueManager.playQueue(listOf(ttsItem), loop = false)
-                            }
-                    }
-
+                withContext(Dispatchers.Default) {
+                    _ttsFlow.emit(ttsItem)
+                }
 
                 val audioMsg = Message.AudioMessage(
                     sender = "AI",
@@ -151,10 +151,16 @@ object ChatRepository {
         }
     }
 
-    // （可选）计算音频文件时长的工具方法
+
     private fun calculateAudioDuration(file: File): Int {
-        // 简化处理：如有需要可使用MediaMetadataRetriever获取音频时长（毫秒），转换为秒
-        // 这里先返回0占位
-        return 0
+        return try {
+            val mmr = MediaMetadataRetriever().apply { setDataSource(file.absolutePath) }
+            val durationStr = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+            mmr.release()
+            durationStr?.toIntOrNull()?.div(1000) ?: 0 // 转为秒
+        } catch (e: Exception) {
+            0
+        }
     }
+
 }

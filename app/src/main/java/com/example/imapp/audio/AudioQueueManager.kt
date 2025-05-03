@@ -1,157 +1,221 @@
+// AudioQueueManager.kt
 package com.example.imapp.audio
 
 import android.content.Context
 import android.net.Uri
+import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.example.imapp.data.AudioItem
-import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import java.io.File
+import java.util.concurrent.CopyOnWriteArrayList
 
+/**
+ * 主播放队列管理，支持互斥的临时 TTS 播放
+ */
 object AudioQueueManager {
-    private var mainPlayer: ExoPlayer? = null          // 主队列播放器
-    private var tempPlayer: ExoPlayer? = null          // 临时插播播放器
-    private var loopFlag   = false
+    private var mainPlayer: ExoPlayer? = null
+    private var tempPlayer: ExoPlayer? = null
+    private lateinit var appContext: Context
 
-    // 新增：记录所有临时插入的 TTS ID
-    private val tempMap = mutableMapOf<String, String>()  // id → file path
+    // 主播放队列
+    private val queue = mutableListOf<AudioItem>()
+    private var currentIndex = 0
+
+    // 待插播的 TTS 列表
+    private val pendingTemp = CopyOnWriteArrayList<AudioItem>()
+    private var isTempPlaying = false
 
 
     private val _playingItem = MutableStateFlow<AudioItem?>(null)
-    val playingItem = _playingItem.asStateFlow()
+    val playingItem: StateFlow<AudioItem?> = _playingItem
 
-    /* 当前播放列表（已过滤未勾选）*/
-    private var currentList: List<AudioItem> = emptyList()
 
-    /* 恢复主播放器的位置 */
-    private var resumePosition: Long = 0L
+    private val _isMainPlaying = MutableStateFlow(false)
+    val isMainPlaying: StateFlow<Boolean> = _isMainPlaying
 
-    fun init(ctx: Context) {
+    private var wasMainPlayingBeforeTemp: Boolean = false
+
+
+    /**
+     * 初始化播放器，需要在 App 启动或首次调用时执行
+     */
+    @OptIn(UnstableApi::class)
+    fun init(context: Context) {
+        appContext = context.applicationContext
         if (mainPlayer != null) return
-        val appCtx = ctx.applicationContext
-        mainPlayer = ExoPlayer.Builder(appCtx).build().apply {
+
+        mainPlayer = ExoPlayer.Builder(appContext).build().apply {
             setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                true
+                    .build(), true
             )
             addListener(object : Player.Listener {
-                private var previousMediaId: String? = null
-                override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-
-                    // 清理上一首临时 TTS
-                    previousMediaId?.takeIf { it in tempMap }?.let { tempId ->
-                        val path = tempMap.remove(tempId)
-                        removeFromQueue(tempId)
-                        path?.let { File(it).takeIf(File::exists)?.delete() }
-                    }
-
-                    previousMediaId = item?.mediaId
-                    _playingItem.value = previousMediaId
-                        ?.let { id -> currentList.find { it.id == id } }
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    _isMainPlaying.value = isPlaying
 
                 }
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    // 主播放器切到下一首前触发
+                    if (pendingTemp.isNotEmpty() && !isTempPlaying) {
+                        pause()
+                        playTempList()
+                    } else {
+                        currentIndex = this@apply.currentMediaItemIndex
+                        val current = queue.getOrNull(currentIndex)
+                        _playingItem.value = current
+                    }
 
+
+                }
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_ENDED) {
+                        // 重置队列和状态
+                        _playingItem.value = null
+                        _isMainPlaying.value = false
+                    }
+                }
             })
         }
     }
 
-    /* ---------------- 队列播放 ---------------- */
+    /**
+     * 播放主列表，可指定循环
+     */
     fun playQueue(list: List<AudioItem>, loop: Boolean) {
-        currentList = list.filter { it.selected }
-        if (currentList.isEmpty()) return
-        loopFlag = loop
+        // 重置临时播放状态
+        pendingTemp.clear()
+        isTempPlaying = false
+        releaseTempPlayer()
+
+        // 更新队列
+        queue.clear()
+        queue.addAll(list)
+        currentIndex = 0
+
         mainPlayer?.apply {
             repeatMode = if (loop) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
-            setMediaItems(currentList.map { it.toMediaItem() }, true)
+            setMediaItems(queue.map { it.toMediaItem() }, /* resetPosition= */ true)
             prepare()
             playWhenReady = true
         }
     }
 
-    /** 勾选状态改变后调用，刷新播放列表 */
-    fun refreshQueue() {
-        if (!isPlaying) return
-        playQueue(currentList, loopFlag)
+    fun pause() {
+        if (isTempPlaying) tempPlayer?.pause() else mainPlayer?.pause()
     }
-
-
-    /* ---------------- 控制 ---------------- */
-    val isPlaying: Boolean get() = mainPlayer?.isPlaying == true
-    fun pause() = mainPlayer?.pause()
-    fun resume() = mainPlayer?.play()
+    fun resume() {
+        if (isTempPlaying) tempPlayer?.play() else mainPlayer?.play()
+    }
+    fun stop() {
+        if (isTempPlaying) tempPlayer?.stop() else mainPlayer?.stop()
+    }
 
     fun release() {
+        queue.clear()
+        pendingTemp.clear()
         mainPlayer?.release(); mainPlayer = null
-        tempPlayer?.release(); tempPlayer = null
+        releaseTempPlayer()
     }
-
-    /* 扩展：AudioItem -> MediaItem */
-    private fun AudioItem.toMediaItem() =
-        MediaItem.Builder().setUri(Uri.parse(uri)).setMediaId(id).setTag(name).build()
 
     /**
-     * 将 items 插入到当前播放项之后
+     * 插播 TTS 列表，互斥主播放
      */
-    fun insertTempAudioAfter(items: List<AudioItem>) {
-        mainPlayer?.let { player ->
-            // 找到当前播放索引
-            val idx = player.currentMediaItemIndex
-            // 构建 MediaItems
-            val mediaItems = items.map { it.toMediaItem() }
-            // 在 index+1 位置插入
-            player.addMediaItems(idx + 1, mediaItems)
+    fun playTts(context: Context, items: List<AudioItem>) {
+        init(context)
+        if (items.isEmpty()) return
 
-            // 同步更新内部 currentList
-            val before = currentList.take(idx + 1)
-            val after  = currentList.drop(idx + 1)
-            currentList = before + items + after
 
-            // 标记为临时，播完后自动清理
-            items.forEach { tempMap[it.id] = it.uri }
 
+        if (mainPlayer?.isPlaying == true) {
+            pendingTemp.clear()
+            pendingTemp.addAll(items)
+            wasMainPlayingBeforeTemp = true
+            return
+        }
+        wasMainPlayingBeforeTemp = false
+
+        // 主播放器空闲
+        playTempList()
+    }
+
+    /**
+     * 播放临时列表
+     */
+    @OptIn(UnstableApi::class)
+    private fun playTempList() {
+        if (pendingTemp.isEmpty()) return
+        isTempPlaying = true
+
+        // 停止并释放旧 tempPlayer
+        releaseTempPlayer()
+        tempPlayer = ExoPlayer.Builder(appContext).build().apply {
+            setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .build(), true
+            )
+            setMediaItems(pendingTemp.map { it.toMediaItem() }, /* resetPosition= */ true)
+            prepare()
+            playWhenReady = true
+            addListener(object : Player.Listener {
+
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    // 1. 拿到 tempPlayer 当前的索引
+                    val idx = tempPlayer?.currentMediaItemIndex ?: return
+                    // 2. 取出 pendingTemp 列表里对应的 AudioItem
+                    _playingItem.value = pendingTemp.getOrNull(idx)
+                }
+
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == Player.STATE_ENDED) {
+                        // 清理临时文件
+                        pendingTemp.forEach { File(it.uri).delete() }
+                        pendingTemp.clear()
+                        releaseTempPlayer()
+                        isTempPlaying = false
+                        // 恢复主播放器
+                        // 恢复主播放器：同样用 mainPlayer.currentMediaItemIndex 拿索引
+                        val mainIdx = mainPlayer?.currentMediaItemIndex ?: return
+                        _playingItem.value = queue.getOrNull(mainIdx)
+
+                        if (wasMainPlayingBeforeTemp) {
+                            mainPlayer?.play()
+                        }
+                    }
+                }
+            })
         }
     }
 
-
-    fun removeFromQueue(id: String) {
-        val player = mainPlayer ?: return
-
-        // 1. 找到要删除的索引
-        val count = player.mediaItemCount
-        val idx = (0 until count).indexOfFirst { i ->
-            player.getMediaItemAt(i).mediaId == id
-        }
-        if (idx < 0) return
-
-        // 2. 判断是不是当前正在播放的那首
-        val isCurrent = idx == player.currentMediaItemIndex
-
-        // 3. 从 ExoPlayer 的队列中移除
-        player.removeMediaItem(idx)
-
-        // 4. 同步更新内部 currentList
-        currentList = currentList.filterNot { it.id == id }
-
-        // 5. 如果删的是“当前”那首，切到下一首或暂停
-        if (isCurrent) {
-            val newCount = player.mediaItemCount
-            if (newCount > idx) {
-                // 播放新索引处这首歌
-                player.seekTo(idx, /* positionMs = */ 0L)
-                player.playWhenReady = true
-            } else {
-                // 没有下一首，停播
-                player.pause()
-                _playingItem.value = null
-            }
-        }
+    private fun releaseTempPlayer() {
+        tempPlayer?.release()
+        tempPlayer = null
     }
+
+    private fun AudioItem.toMediaItem(): MediaItem =
+        MediaItem.Builder()
+            .setUri(Uri.parse(uri))
+            .setMediaId(id)
+            .setTag(name)
+            .build()
+
+
+    fun setLoop(loop: Boolean) {
+        mainPlayer?.repeatMode = if (loop) Player.REPEAT_MODE_ALL else Player.REPEAT_MODE_OFF
+    }
+
+    fun hasMainMediaItems(): Boolean {
+        return (mainPlayer?.mediaItemCount ?: 0) > 0
+    }
+
 }

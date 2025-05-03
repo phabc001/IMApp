@@ -33,6 +33,14 @@ fun AudioManagerScreen(
     val scope    = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    /* ---- 状态收集 ---- */
+    val list      by vm.audioList.collectAsState()
+    val loopMode by vm.loopMode.collectAsState()
+    val isPlaying by vm.isPlaying.collectAsState()
+    val playingItem by vm.playingItem.collectAsState()
+
+
+
 
     /* ---- 支持多选的系统文件选择器 ---- */
     val multiLauncher = rememberLauncherForActivityResult(OpenMultipleDocuments()) { uris: List<Uri> ->
@@ -44,10 +52,9 @@ fun AudioManagerScreen(
         }
     }
 
-    /* ---- 状态收集 ---- */
-    val list      by vm.audioList.collectAsState()
-    var isPlaying by remember { mutableStateOf(false) }
-    var loopMode  by remember { mutableStateOf(false) }
+
+
+
 
     Scaffold(
         modifier = modifier,
@@ -75,7 +82,7 @@ fun AudioManagerScreen(
                     items(list) { item ->
                         AudioRow(
                             item    = item,
-                            playing = vm.playingItem.collectAsState().value?.id == item.id,
+                            playing = playingItem?.id == item.id,
                             onCheck = { vm.toggleSelect(item.id) },
                             onDelete = {vm.delete(item.id)}
 
@@ -92,10 +99,14 @@ fun AudioManagerScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("循环")
-                Switch(loopMode, onCheckedChange = { loopMode = it })
+                Switch(loopMode, onCheckedChange = {  vm.setLoopMode(it) })
                 IconButton(onClick = {
-                    if (isPlaying) vm.pause() else vm.play(loopMode)
-                    isPlaying = !isPlaying
+                    when {
+                        isPlaying -> vm.pause()
+                        playingItem != null -> vm.resume()
+                        else -> vm.play()
+                    }
+
                 }) {
                     Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null)
                 }
