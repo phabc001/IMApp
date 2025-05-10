@@ -16,6 +16,9 @@ import java.io.File
 import android.media.MediaMetadataRetriever
 import com.example.imapp.audio.AudioQueueManager
 import com.example.imapp.data.AudioItem
+import com.example.imapp.model.AiReplyRequest
+import com.example.imapp.model.TtsRequest
+import com.example.imapp.network.ApiClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -77,77 +80,60 @@ object ChatRepository {
         }
     }
 
-    // 请求 AI 对指定文本回复
+
     suspend fun requestAiReply(question: String) {
         try {
-            val json = JSONObject().apply {
-                put("user_id", "peter")
-                put("message", question)
+            val response = ApiClient.api.requestAiReply(
+                AiReplyRequest(user_id = "peter", message = question)
+            )
+            if (response.isSuccessful) {
+                val reply = response.body()?.reply?.content ?: "AI回复解析失败"
+                val aiMsg = Message.TextMessage(sender = "AI", text = reply)
+                onReceiveMessage(aiMsg)
+            } else {
+                Log.w("ChatRepository", "AI 回复失败: ${response.code()}")
             }
-            val body = json.toString().toRequestBody(contentType = "application/json; charset=utf-8".toMediaTypeOrNull())
-            val request = Request.Builder()
-                .url("https://beforeai.net/api/ai/coze/non_stream")
-                .post(body)
-                .build()
-            val response = OkHttpClient().newCall(request).execute()
-            val rspStr = response.body?.string().orEmpty()
-            val rspJson = JSONObject(rspStr)
-            val replyObj = rspJson.optJSONObject("reply")
-            val replyContent = replyObj?.optString("content") ?: "AI回复解析失败"
-            // 将 AI 回复作为新消息加入列表
-            val aiMsg = Message.TextMessage(sender = "AI", text = replyContent)
-            onReceiveMessage(aiMsg)
         } catch (e: Exception) {
-            Log.e("ChatRepository", "AI 回复请求异常: ${e.message}")
+            Log.e("ChatRepository", "AI 回复异常: ${e.message}")
         }
     }
 
-    // 请求 TTS 合成语音并作为音频消息插入
     suspend fun requestTtsAudio(ctx: Context, text: String) {
         try {
-            val json = JSONObject().apply {
-                put("text", text)
-                put("voice_id", "longwan")
-            }
-            val body = json.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
-            val request = Request.Builder()
-                .url("https://beforeai.net/api/tts/")
-                .post(body)
-                .build()
-            val response = OkHttpClient().newCall(request).execute()
-            val rspStr = response.body?.string().orEmpty()
-            val rspJson = JSONObject(rspStr)
-            if (rspJson.optBoolean("success", false)) {
-                val audioBase64 = rspJson.optString("audio_base64", "")
-                val audioData = Base64.decode(audioBase64, Base64.DEFAULT)
-                val dir = File(ctx.filesDir, "tts_audios").apply { mkdirs() }
-                val filename = "tts_${System.currentTimeMillis()}.mp3"
-                val audioFile = File(dir, filename)
-                audioFile.outputStream().use { it.write(audioData) }
+            val response = ApiClient.api.synthesizeTts(
+                TtsRequest(text = text, voice_id = "longwan")
+            )
+            if (response.isSuccessful) {
+                val rsp = response.body()
+                if (rsp?.success == true && rsp.audio_base64.isNotBlank()) {
+                    val audioData = Base64.decode(rsp.audio_base64, Base64.DEFAULT)
+                    val dir = File(ctx.filesDir, "tts_audios").apply { mkdirs() }
+                    val file = File(dir, "tts_${System.currentTimeMillis()}.mp3")
+                    file.writeBytes(audioData)
 
-                val durationSec = calculateAudioDuration(audioFile)
-
-
-                // 3. 构造 AudioItem
-                val ttsItem = AudioItem(
-                    id   = UUID.randomUUID().toString(),
-                    name = filename,
-                    uri  = audioFile.absolutePath
+                    val durationSec = calculateAudioDuration(file)
+                    val ttsItem = AudioItem(
+                        id = UUID.randomUUID().toString(),
+                        name = file.name,
+                        uri = file.absolutePath
                     )
 
-                withContext(Dispatchers.Default) {
-                    _ttsFlow.emit(ttsItem)
-                }
+                    withContext(Dispatchers.Default) {
+                        _ttsFlow.emit(ttsItem)
+                    }
 
-                val audioMsg = Message.AudioMessage(
-                    sender = "AI",
-                    data = audioBase64,
-                    duration = durationSec,       // 可进一步计算时长
-                    format = "mp3"
-                )
-                onReceiveMessage(audioMsg)
+                    val audioMsg = Message.AudioMessage(
+                        sender = "AI",
+                        data = rsp.audio_base64,
+                        duration = durationSec,
+                        format = "mp3"
+                    )
+                    onReceiveMessage(audioMsg)
+                } else {
+                    Log.w("ChatRepository", "TTS接口返回无效")
+                }
             } else {
-                Log.w("ChatRepository", "TTS接口调用失败: ${rspJson.optString("message")}")
+                Log.w("ChatRepository", "TTS接口失败: ${response.code()}")
             }
         } catch (e: Exception) {
             Log.e("ChatRepository", "请求 TTS 异常: ${e.message}")
