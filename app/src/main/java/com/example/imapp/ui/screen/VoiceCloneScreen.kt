@@ -9,6 +9,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.imapp.ui.component.rememberAudioPlayer
 import com.example.imapp.viewmodel.VoiceCloneViewModel
 
 /**
@@ -110,6 +111,8 @@ fun VoiceCloneScreen(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
+                val playAudio = rememberAudioPlayer(path)
+
                 Column(Modifier.padding(16.dp)) {
                     Text("合成完成！文件已保存：")
                     Text(
@@ -120,7 +123,7 @@ fun VoiceCloneScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Button(
-                        onClick = { /* TODO: 播放或分享 */ },
+                        onClick = { playAudio() },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null)   // ← 先放图标
