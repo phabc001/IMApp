@@ -15,10 +15,25 @@ android {
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "API_BASE_URL", "\"https://your-api.com\"")
+        buildConfigField("String", "USERNAME", "\"defaultUser\"")
+        buildConfigField("String", "PASSWORD", "\"defaultPass\"")
+    }
+
+    buildTypes {
+        getByName("debug") {
+            buildConfigField("String", "API_BASE_URL", "\"https://beforeai.net\"")
+        }
+        getByName("release") {
+            isMinifyEnabled = true
+            buildConfigField("String", "API_BASE_URL", "\"https://beforeai.net\"")
+        }
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true  // ✅ 开启 BuildConfig 功能
     }
     composeOptions {
         // 用与你的 BOM 匹配的 compiler 版本
@@ -73,6 +88,9 @@ dependencies {
     implementation(libs.androidx.foundation.v154)
     implementation(libs.androidx.media3.exoplayer.v150)
     implementation(libs.androidx.media3.ui.v150)
+    implementation(libs.retrofit)
+    implementation(libs.converter.gson)
+
 
 
 

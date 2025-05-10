@@ -23,5 +23,12 @@ fun RootNavGraph() {
 
         /* 三级：创建音色 */
         composable("voice-create") { VoiceCreateScreen(nav) }
+
+        // ✅ 新增登录页面
+        composable("login") {
+            LoginScreen(onLoginSuccess = {
+                nav.popBackStack()  // 登录成功返回上一页
+            })
+        }
     }
 }

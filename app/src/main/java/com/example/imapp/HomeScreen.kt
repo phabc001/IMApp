@@ -72,7 +72,12 @@ fun HomeScreen(
             NavigationItem.VoiceClone   -> VoiceCloneScreen(
                 Modifier.padding(innerPadding) )
             NavigationItem.Me -> {
-                MeScreen(modifier = Modifier.padding(innerPadding))
+                MeScreen(modifier = Modifier.padding(innerPadding),
+                        onLoginClick = {
+                    navController.navigate("login")  // ✅ 加上这行跳转
+                }
+
+                )
             }
         }
     }
